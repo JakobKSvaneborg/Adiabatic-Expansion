@@ -23,7 +23,7 @@ from numba import jit,njit,prange
 
 
 #@njit(parallel=True)
-def calc_current(T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,side='left',eta=None,nyquist_damping=5,calc_density=False,save_arrays='none',name='AE'):
+def calc_current(T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,side='left',order=2,eta=None,nyquist_damping=5,calc_density=False,save_arrays='none',name='AE'):
     #save_arrays specifies whether to save the internal arrays. Currently just set to save the Green's functions and current matrices. 
     #save_arrays may be set to 'all', 'diag' or 'none' depending on whether you want to save the entire arrays, their diagonals, or not at all
     #name: name prepended to saved files
@@ -170,7 +170,27 @@ def calc_current(T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,
         if side=='right' or side=='both':
             Pi0_R = G0_less@Sigma_R_A + G0_R@Sigma_R_less
             J0_R[i] = 1/np.pi * np.sum(np.trace(np.real(Pi0_R)*omega_weights,axis1=2,axis2=3),axis=1)
-        
+
+        if calc_density:
+            density0[i]=np.sum(omega_weights*np.imag(G0_less),axis=1)/(2*np.pi) 
+            
+        if save_arrays == 'all':
+            G0_R_array[i] = G0_R
+            G0_less_array[i] = G0_less
+            if side=='left' or side=='both':
+                Pi0_L_array[i] = Pi0_L
+            if side=='right' or side=='both':
+                Pi0_R_array[i] = Pi0_R
+        elif save_arrays== 'diag':
+            G0_R_array[i] = np.diagonal(G0_R,axis1=2,axis2=3)
+            G0_less_array[i] = np.diagonal(G0_less,axis1=2,axis2=3)
+            if side=='left' or side=='both':
+                Pi0_L_array[i] = np.diagonal(Pi0_L,axis1=2,axis2=3)
+            if side=='right' or side=='both':
+                Pi0_R_array[i] = np.diagonal(Pi0_R,axis1=2,axis2=3)
+
+        if order == 0:
+            continue
 
         #FIRST ORDER
 
@@ -202,7 +222,29 @@ def calc_current(T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,
         if side=='right' or side=='both':
             Pi1_R = G1_less@Sigma_R_A + G1_R@Sigma_R_less - 1j/2 * G0_less_dT@Sigma_R_A_dw + 1j/2*G0_less_dw@Sigma_R_A_dT -1j/2*G0_R_dT@Sigma_R_less_dw + 1j/2*G0_R_dw@Sigma_R_less_dT
             J1_R[i] = 1/np.pi * np.sum(np.trace(np.real(Pi1_R)*omega_weights,axis1=2,axis2=3),axis=1)
+       
+        if calc_density:
+            density1[i]=np.sum(omega_weights*np.imag(G1_less),axis=1)/(2*np.pi) 
+            
+        if save_arrays == 'all':
+            G1_R_array[i] = G1_R
+            G1_less_array[i] = G1_less
+            if side=='left' or side=='both':
+                Pi1_L_array[i] = Pi1_L
+            if side=='right' or side=='both':
+                Pi1_R_array[i] = Pi1_R
+        elif save_arrays== 'diag':
+            G1_R_array[i] = np.diagonal(G1_R,axis1=2,axis2=3)
+            G1_less_array[i] = np.diagonal(G1_less,axis1=2,axis2=3)
+            if side=='left' or side=='both':
+                Pi1_L_array[i] = np.diagonal(Pi1_L,axis1=2,axis2=3)
+            if side=='right' or side=='both':
+                Pi1_R_array[i] = np.diagonal(Pi1_R,axis1=2,axis2=3)
 
+
+
+        if order==1: 
+            continue
 
         #SECOND ORDER
         Sigma_L_less_d2w = calc_Sigma_less(t,omega,Electrode_L,derivative=2,nyquist_damping=nyquist_damping)
@@ -308,59 +350,24 @@ def calc_current(T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,
             
             J2_R[i] = 1/np.pi * np.sum(np.trace(np.real(Pi2_R)*omega_weights,axis1=2,axis2=3),axis=1)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         if calc_density:
-            density0[i]=np.sum(omega_weights*np.imag(G0_less),axis=1)/(2*np.pi) 
-            density1[i]=np.sum(omega_weights*np.imag(G1_less),axis=1)/(2*np.pi) 
             density2[i]=np.sum(omega_weights*np.imag(G2_less),axis=1)/(2*np.pi) 
+            
         if save_arrays == 'all':
-            G0_R_array[i] = G0_R
-            G0_less_array[i] = G0_less
-            G1_R_array[i] = G1_R
-            G1_less_array[i] = G1_less
             G2_R_array[i] = G2_R
             G2_less_array[i] = G2_less
             if side=='left' or side=='both':
-                Pi0_L_array[i] = Pi0_L
-                Pi1_L_array[i] = Pi1_L
                 Pi2_L_array[i] = Pi2_L
             if side=='right' or side=='both':
-                Pi0_R_array[i] = Pi0_R
-                Pi1_R_array[i] = Pi1_R
                 Pi2_R_array[i] = Pi2_R
         elif save_arrays== 'diag':
-            G0_R_array[i] = np.diagonal(G0_R,axis1=2,axis2=3)
-            G0_less_array[i] = np.diagonal(G0_less,axis1=2,axis2=3)
-            G1_R_array[i] = np.diagonal(G1_R,axis1=2,axis2=3)
-            G1_less_array[i] = np.diagonal(G1_less,axis1=2,axis2=3)
             G2_R_array[i] = np.diagonal(G2_R,axis1=2,axis2=3)
             G2_less_array[i] = np.diagonal(G2_less,axis1=2,axis2=3)
             if side=='left' or side=='both':
-                Pi0_L_array[i] = np.diagonal(Pi0_L,axis1=2,axis2=3)
-                Pi1_L_array[i] = np.diagonal(Pi1_L,axis1=2,axis2=3)
-                Pi2_L_array[i] = np.diagonal(Pi1_L,axis1=2,axis2=3)
+                Pi2_L_array[i] = np.diagonal(Pi2_L,axis1=2,axis2=3)
             if side=='right' or side=='both':
-                Pi0_R_array[i] = np.diagonal(Pi0_R,axis1=2,axis2=3)
-                Pi1_R_array[i] = np.diagonal(Pi1_R,axis1=2,axis2=3)
                 Pi2_R_array[i] = np.diagonal(Pi2_R,axis1=2,axis2=3)
+
 
         end_time = time.time()
         #print('calc_current loop calculated in %.2f seconds'%(end_time-start_time))
@@ -369,41 +376,55 @@ def calc_current(T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,
     if save_arrays == 'all' or save_arrays == 'diag':
         out['G0_R'] = G0_R_array
         out['G0_less'] = G0_less_array
-        out['G1_R'] = G1_R_array
-        out['G1_less'] = G1_less_array
-        out['G2_R'] = G2_R_array
-        out['G2_less'] = G2_less_array
+        if order > 0:
+            out['G1_R'] = G1_R_array
+            out['G1_less'] = G1_less_array
+        if order > 1:
+            out['G2_R'] = G2_R_array
+            out['G2_less'] = G2_less_array
         if side=='left' or side=='both':
             out['Pi0_L'] = Pi0_L_array
-            out['Pi1_L'] = Pi1_L_array
-            out['Pi2_L'] = Pi2_L_array
+            if order > 0:
+                out['Pi1_L'] = Pi1_L_array
+            if order > 1:
+                out['Pi2_L'] = Pi2_L_array
         if side=='right' or side=='both':
             out['Pi0_R'] = Pi0_R_array
-            out['Pi1_R'] = Pi1_R_array
-            out['Pi2_R'] = Pi2_R_array
+            if order > 0:
+                out['Pi1_R'] = Pi1_R_array
+            if order > 1:
+                out['Pi2_R'] = Pi2_R_array
 
     end_time = time.time()
     print('calc_current total calculated in %.2f seconds'%(end_time-initial_start_time))
 
     if side =='left': 
         out['J0_L'] = J0_L
-        out['J1_L'] = J1_L
-        out['J2_L'] = J2_L
+        if order > 0:
+            out['J1_L'] = J1_L
+        if order > 1:
+            out['J2_L'] = J2_L
     elif side=='right':
         out['J0_R'] = J0_R
-        out['J1_R'] = J1_R
-        out['J2_R'] = J2_R
+        if order > 0:
+            out['J1_R'] = J1_R
+        if order > 1:
+            out['J2_R'] = J2_R
     elif side=='both':
         out['J0_L'] = J0_L
-        out['J1_L'] = J1_L
-        out['J2_L'] = J2_L
         out['J0_R'] = J0_R
-        out['J1_R'] = J1_R
-        out['J2_R'] = J2_R
+        if order > 0:
+            out['J1_L'] = J1_L
+            out['J1_R'] = J1_R
+        if order > 1:
+            out['J2_L'] = J2_L
+            out['J2_R'] = J2_R
     if calc_density:
         out['density0'] = density0
-        out['density1'] = density1
-        out['density2'] = density2
+        if order > 0:
+            out['density1'] = density1
+        if order > 1:
+            out['density2'] = density2
     return out
 
 
