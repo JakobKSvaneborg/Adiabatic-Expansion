@@ -37,19 +37,32 @@ def fftfreq(n,d):
     return np.fft.fftfreq(n,d)
 
 
-class Spline: #wrapper for scipy.interpolate.CubicSpline that simply sets values outside the interpolation range to zero (rather than NaN)
-    def __init__(self,x, y, axis=0, bc_type='dirichlet', extrapolate=False): 
+class Spline: 
+    """
+    A wrapper for the scipy.interpolate.CubicSpline class that is changed to specifically suit the needs in AE.
+    Creates a cubic spline f(x) from the sample points (X,Y).
+    It implements new BC types, namely 
+    - 'dirichlet' which sets the function to zero outside the range covered by the sample points ([X.min(), X.max()]), i.e. f(x > X.max() ) = 0 and f(x < X.min()) = 0.
+    - 'constant', which is used for antiderivatives of functions with dirichlet BCs. Here f(x > X.max()) = f(X.max()) and f(x < X.min()) = f(X.min()).
+    One can additionally specify whether the function is a matrix, which helps determine the shape of the output.
+    """
+    def __init__(self,x, y, axis=0, bc_type='dirichlet', extrapolate=False,MatrixFunction = False): 
         #bc-type may be 'dirichlet', 'constant', or any normal CubicSpline bc.
         self.bc_type = bc_type
         if bc_type == 'dirichlet' or bc_type =='constant':
             bc_type = 'not-a-knot'
+        self.MatrixFunction = MatrixFunction
         cs = CubicSpline(x,y,axis,bc_type,extrapolate)
         self.cs = cs    
         self.X = x
         self.Y = y
 
     
-    def __call__(self,x):
+    def __call__(self,x0):
+        x = np.array(x0)
+        if self.MatrixFunction and len(x.shape)>2:
+            #if the function is a matrix function and the argument already contains the matrix indices, we remove these internally as they will be re-added when the function is called.
+            x = x.reshape(x.shape[:-2]) 
         res = self.cs(x)
         if self.bc_type == 'dirichlet':
             res[np.isnan(res)] = 0

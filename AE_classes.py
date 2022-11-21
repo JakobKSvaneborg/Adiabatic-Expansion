@@ -252,30 +252,52 @@ class Device:
 
     basis_size = None
 
-    def __init__(self,H0=None,kT=0.1, Ht = None,T=None, H_dT = None, H_int = None):
+    def __init__(self,H0=None,kT=0.1, Ht = None,T=None, H_dT = None):
         
         self.kT = kT
-        self.T = T #Times at which the 
+        self.T = T #Times at which the Hamiltonian is evaluated, in case Ht is given as an array
         self.set_H(H0,Ht)
         self.H_dT = H_dT
-        self.H_int = H_int
         
     def set_H(self,H0,Ht): #function to set self-variable; in future may allow more flexibility for inputting H.
-        self.H0 = H0
-        if Ht is None and H0 is not None:
-            Ht = lambda t : np.zeros(H0.shape)
-        elif not callable(Ht):
-            print('Time-dependent part of Hamiltonian is not callable - using spline interpolation instead.')
-            if self.T is None:
-                self.T = np.arange(len(Ht))
-            Ht = AE_math.Spline(self.T,Ht)
+        if Ht is None and H0 is None:
+            self.H=None
+            self.H0=None
+            self.Ht=None
+            return
+        #Either Ht or H0 is specified
         
-        self.Ht = Ht
 
-        #get number of basis functions in device
-        if H0 is not None:
+        if H0 is not None: #H0 is specified, Ht may or may not be
+            H0 = np.array(H0)
+            if len(H0.shape) < 2:
+                H0 = H0.reshape(1,1)
             self.n_orbitals = H0.shape[-1] 
             self.basis_size = self.n_orbitals
+        self.H0 = H0
+
+
+        if Ht is not None: #Ht is specified, H0 may or may not be
+            if not callable(Ht):
+                print('Time-dependent part of Hamiltonian is not callable - using spline interpolation instead.')
+                if self.T is None:
+                    self.T = np.arange(len(Ht))
+                if len(Ht.shape) > 3: #shape of input is (T,1,n,n) - this is one index too many. We remove all indices of dimension 1.
+                    Ht = np.squeeze(Ht)
+                if len(Ht.shape) < 3: #Ht should at least have shape (T,n,n) if it is a matrix. If its dimension is shorter, it cannot be a matrix!
+                    Ht = Ht.reshape(-1,1,1)
+
+                Ht = AE_math.Spline(self.T,Ht,MatrixFunction=True)
+            H_t0 = Ht(np.array([0]))
+            self.n_orbitals = H_t0.shape[-1] 
+            self.basis_size = self.n_orbitals
+            if H0 is None:
+                H0 = np.zeros((self.basis_size,self.basis_size))
+        else: #Ht is none: then H0 cannot be
+            Ht = lambda t : np.zeros(H0.shape)
+
+        self.Ht = Ht
+
         self.H = lambda t : self.H0 + self.Ht(t)
         return
 
