@@ -213,8 +213,11 @@ class Electrode:
                 pass
 
 
-    def fermi(self,eps):
-        exp = np.exp(-(eps-self.mu)/self.kT)
+    def fermi(self,eps,T=None):
+        if T is not None:
+            exp = np.exp(-(eps-self.mu - self.potential(T))/self.kT)
+        else:
+            exp = np.exp(-(eps-self.mu)/self.kT)
         return exp/(1+exp)
 
     def set_Gamma(self,Gamma):
