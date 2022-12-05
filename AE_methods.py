@@ -19,7 +19,8 @@ import matplotlib.pyplot as plt
 from scipy.signal import hilbert as scipy_hilbert
 import AE_math
 from AE_classes import *
-from numba import jit,njit,prange
+#from numba import jit,njit,prange
+import joblib as jl
 
 
 #@njit(parallel=True)
@@ -87,113 +88,127 @@ def calc_current(T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,
         G2_R_array = np.zeros((np.size(T),np.size(omega),Device.basis_size),dtype=np.complex128)
         Pi2_L_array = np.zeros((np.size(T),np.size(omega),Device.basis_size),dtype=np.complex128)
         Pi2_R_array = np.zeros((np.size(T),np.size(omega),Device.basis_size),dtype=np.complex128)
-    for i in prange(len(T)):
+    
 
-        #print('loop %d/%d'%(i+1,len(T)),flush=True)
-        t=T[i].reshape(1,1,1,1)
-        Sigma_L_R = f_Sigma_L_R(t)
-        Sigma_R_R = f_Sigma_R_R(t)
-        Sigma_L_less = f_Sigma_L_less(t)
-        Sigma_R_less = f_Sigma_R_less(t)
+    #for i in prange(len(T)):
 
-        Sigma_L_A = np.conjugate(Sigma_L_R)
-        Sigma_R_A = np.conjugate(Sigma_R_R)
-        Sigma_R = Sigma_R_R + Sigma_L_R
-        #Sigma_A = Sigma_R_A + Sigma_L_A
-        Sigma_less = Sigma_L_less + Sigma_R_less
+    #print('loop %d/%d'%(i+1,len(T)),flush=True)
+    t=T#T[i].reshape(1,1,1,1)
+    
+    Sigma_L_R = f_Sigma_L_R(t)
+    Sigma_R_R = f_Sigma_R_R(t)
+    Sigma_L_less = f_Sigma_L_less(t)
+    Sigma_R_less = f_Sigma_R_less(t)
 
-        Sigma_L_less_dT = deriv(f_Sigma_L_less ,t)
-        Sigma_R_less_dT = deriv(f_Sigma_R_less ,t)
-        Sigma_L_R_dT = deriv(f_Sigma_L_R ,t)
-        Sigma_R_R_dT = deriv(f_Sigma_R_R ,t)
+    Sigma_L_A = np.conjugate(Sigma_L_R)
+    Sigma_R_A = np.conjugate(Sigma_R_R)
+    Sigma_R = Sigma_R_R + Sigma_L_R
+    #Sigma_A = Sigma_R_A + Sigma_L_A
+    Sigma_less = Sigma_L_less + Sigma_R_less
 
-        Sigma_L_A_dT = np.conjugate(Sigma_L_R_dT)
-        Sigma_R_A_dT = np.conjugate(Sigma_R_R_dT)
+    Sigma_L_less_dT = deriv(f_Sigma_L_less ,t)
+    Sigma_R_less_dT = deriv(f_Sigma_R_less ,t)
+    Sigma_L_R_dT = deriv(f_Sigma_L_R ,t)
+    Sigma_R_R_dT = deriv(f_Sigma_R_R ,t)
 
-        #functions to calculate derivatives wrt omega
-        #fw_Sigma_L_R = lambda w : self.calc_Sigma_R(t,w,alpha='L',nyquist_damping=nyquist_damping)
-        #fw_Sigma_R_R = lambda w : self.calc_Sigma_R(t,w,alpha='R',nyquist_damping=nyquist_damping)
-        #fw_Sigma_L_less = lambda w : self.calc_Sigma_less(t,w,alpha='L',nyquist_damping=nyquist_damping)
-        #fw_Sigma_R_less = lambda w : self.calc_Sigma_less(t,w,alpha='R',nyquist_damping=nyquist_damping)
+    Sigma_L_A_dT = np.conjugate(Sigma_L_R_dT)
+    Sigma_R_A_dT = np.conjugate(Sigma_R_R_dT)
 
-        Sigma_L_less_dw = calc_Sigma_less(t,omega,Electrode_L,derivative=1,nyquist_damping=nyquist_damping)
-        Sigma_R_less_dw = calc_Sigma_less(t,omega,Electrode_R,derivative=1,nyquist_damping=nyquist_damping)
-        Sigma_L_R_dw = calc_Sigma_R(t,omega,Electrode_L,derivative=1,nyquist_damping=nyquist_damping)
-        Sigma_R_R_dw = calc_Sigma_R(t,omega,Electrode_R,derivative=1,nyquist_damping=nyquist_damping)
+    #functions to calculate derivatives wrt omega
+    #fw_Sigma_L_R = lambda w : self.calc_Sigma_R(t,w,alpha='L',nyquist_damping=nyquist_damping)
+    #fw_Sigma_R_R = lambda w : self.calc_Sigma_R(t,w,alpha='R',nyquist_damping=nyquist_damping)
+    #fw_Sigma_L_less = lambda w : self.calc_Sigma_less(t,w,alpha='L',nyquist_damping=nyquist_damping)
+    #fw_Sigma_R_less = lambda w : self.calc_Sigma_less(t,w,alpha='R',nyquist_damping=nyquist_damping)
+
+    Sigma_L_less_dw = calc_Sigma_less(t,omega,Electrode_L,derivative=1,nyquist_damping=nyquist_damping)
+    Sigma_R_less_dw = calc_Sigma_less(t,omega,Electrode_R,derivative=1,nyquist_damping=nyquist_damping)
+    Sigma_L_R_dw = calc_Sigma_R(t,omega,Electrode_L,derivative=1,nyquist_damping=nyquist_damping)
+    Sigma_R_R_dw = calc_Sigma_R(t,omega,Electrode_R,derivative=1,nyquist_damping=nyquist_damping)
+    
+    start_time = time.time()
+    Sigma_L_A_dw = np.conjugate(Sigma_L_R_dw)
+    Sigma_R_A_dw = np.conjugate(Sigma_R_R_dw)
+
+    #Total self energies
+    Sigma_less_dT = Sigma_L_less_dT + Sigma_R_less_dT
+    Sigma_less_dw = Sigma_L_less_dw + Sigma_R_less_dw
+
+    Sigma_R_dT =  Sigma_R_R_dT + Sigma_L_R_dT
+    Sigma_A_dT =  Sigma_R_A_dT + Sigma_L_A_dT
+    Sigma_R_dw=  Sigma_R_R_dw + Sigma_L_R_dw
+    Sigma_A_dw=  Sigma_R_A_dw + Sigma_L_A_dw
+    #print('Calculated derivatives',flush=True)
+
+
+    H =  Device.H(t)
+    if Device.H_dT is None:
+        H_dT = deriv(Device.H,t)
+    else:
+        H_dT = Device.H_dT(t)
+
+    domain_length = omega.max() - omega.min()
+    dtau = 2*np.pi/domain_length
+    tau = dtau*np.arange(omega.size).reshape(1,-1,1,1)
+    #Nyquist_freq = tau.max()/2
+    #Nyquist_filter = np.exp(-(nyquist_damping*tau/Nyquist_freq)**2/2)
+    L0_R = (omega+1j*eta)*np.identity(Device.basis_size) - H - Sigma_R
+    L0_A = np.conjugate(L0_R)
+    G0_R_unfiltered = inv(L0_R)
+    #G0_R_filtered = ifft(Nyquist_filter*fft(G0_R_unfiltered,axis=1),axis=1)
+    #change_in_norm = np.sqrt(np.sum(G0_R_unfiltered**2)/np.sum(G0_R_filtered**2))
+    #if  np.abs(change_in_norm - 1) > 0.1:
+    #print('Filtering G0_R changed its norm by more than 10%. Results may not be reliable.')
+    
+    G0_R = G0_R_unfiltered
+    G0_A = np.conjugate(G0_R)
+    G0_less = G0_R@Sigma_less@G0_A
+    #Current matrices - zero order. Eq (35)
+    if side=='left' or side=='both':
+        Pi0_L = G0_less@Sigma_L_A + G0_R@Sigma_L_less
         
-        start_time = time.time()
-        Sigma_L_A_dw = np.conjugate(Sigma_L_R_dw)
-        Sigma_R_A_dw = np.conjugate(Sigma_R_R_dw)
 
-        #Total self energies
-        Sigma_less_dT = Sigma_L_less_dT + Sigma_R_less_dT
-        Sigma_less_dw = Sigma_L_less_dw + Sigma_R_less_dw
-
-        Sigma_R_dT =  Sigma_R_R_dT + Sigma_L_R_dT
-        Sigma_A_dT =  Sigma_R_A_dT + Sigma_L_A_dT
-        Sigma_R_dw=  Sigma_R_R_dw + Sigma_L_R_dw
-        Sigma_A_dw=  Sigma_R_A_dw + Sigma_L_A_dw
-        #print('Calculated derivatives',flush=True)
+        #The integral over omega is calculated as the vector product with the gauss-legendre weights. Eq (34)
+        #J0_L[i] = 1/np.pi * np.sum(np.trace(np.real(Pi0_L)*omega_weights,axis1=2,axis2=3),axis=1)
+        J0_L = 1/np.pi * np.sum(np.trace(np.real(Pi0_L)*omega_weights,axis1=2,axis2=3),axis=1)
 
 
-        H =  Device.H(t)
-        if Device.H_dT is None:
-            H_dT = deriv(Device.H,t)
-        else:
-            H_dT = Device.H_dT(t)
+    if side=='right' or side=='both':
+        Pi0_R = G0_less@Sigma_R_A + G0_R@Sigma_R_less
+        #J0_R[i] = 1/np.pi * np.sum(np.trace(np.real(Pi0_R)*omega_weights,axis1=2,axis2=3),axis=1)
+        J0_R = 1/np.pi * np.sum(np.trace(np.real(Pi0_R)*omega_weights,axis1=2,axis2=3),axis=1)
 
-        domain_length = omega.max() - omega.min()
-        dtau = 2*np.pi/domain_length
-        tau = dtau*np.arange(omega.size).reshape(1,-1,1,1)
-        #Nyquist_freq = tau.max()/2
-        #Nyquist_filter = np.exp(-(nyquist_damping*tau/Nyquist_freq)**2/2)
-        L0_R = (omega+1j*eta)*np.identity(Device.basis_size) - H - Sigma_R
-        L0_A = np.conjugate(L0_R)
-        G0_R_unfiltered = inv(L0_R)
-        #G0_R_filtered = ifft(Nyquist_filter*fft(G0_R_unfiltered,axis=1),axis=1)
-        #change_in_norm = np.sqrt(np.sum(G0_R_unfiltered**2)/np.sum(G0_R_filtered**2))
-        #if  np.abs(change_in_norm - 1) > 0.1:
-        #print('Filtering G0_R changed its norm by more than 10%. Results may not be reliable.')
+    if calc_density:
+        #density0[i]=np.sum(omega_weights*np.imag(G0_less),axis=1)/(2*np.pi) 
+        density0=np.sum(omega_weights*np.imag(G0_less),axis=1)/(2*np.pi) 
         
-        G0_R = G0_R_unfiltered
-        G0_A = np.conjugate(G0_R)
-        G0_less = G0_R@Sigma_less@G0_A
-        #Current matrices - zero order. Eq (35)
+    if save_arrays == 'all':
+        #G0_R_array[i] = G0_R
+        G0_R_array = G0_R
+        #G0_less_array[i] = G0_less
+        G0_less_array = G0_less
         if side=='left' or side=='both':
-            Pi0_L = G0_less@Sigma_L_A + G0_R@Sigma_L_less
-            
-
-            #The integral over omega is calculated as the vector product with the gauss-legendre weights. Eq (34)
-            J0_L[i] = 1/np.pi * np.sum(np.trace(np.real(Pi0_L)*omega_weights,axis1=2,axis2=3),axis=1)
-
-
+            #Pi0_L_array[i] = Pi0_L
+            Pi0_L_array = Pi0_L
         if side=='right' or side=='both':
-            Pi0_R = G0_less@Sigma_R_A + G0_R@Sigma_R_less
-            J0_R[i] = 1/np.pi * np.sum(np.trace(np.real(Pi0_R)*omega_weights,axis1=2,axis2=3),axis=1)
+            #Pi0_R_array[i] = Pi0_R
+            Pi0_R_array = Pi0_R
+    elif save_arrays== 'diag':
+        #G0_R_array[i] = np.diagonal(G0_R,axis1=2,axis2=3)
+        G0_R_array = np.diagonal(G0_R,axis1=2,axis2=3)
+        #G0_less_array[i] = np.diagonal(G0_less,axis1=2,axis2=3)
+        G0_less_array = np.diagonal(G0_less,axis1=2,axis2=3)
+        if side=='left' or side=='both':
+            #Pi0_L_array[i] = np.diagonal(Pi0_L,axis1=2,axis2=3)
+            Pi0_L_array = np.diagonal(Pi0_L,axis1=2,axis2=3)
+        if side=='right' or side=='both':
+            #Pi0_R_array[i] = np.diagonal(Pi0_R,axis1=2,axis2=3)
+            Pi0_R_array = np.diagonal(Pi0_R,axis1=2,axis2=3)
 
-        if calc_density:
-            density0[i]=np.sum(omega_weights*np.imag(G0_less),axis=1)/(2*np.pi) 
-            
-        if save_arrays == 'all':
-            G0_R_array[i] = G0_R
-            G0_less_array[i] = G0_less
-            if side=='left' or side=='both':
-                Pi0_L_array[i] = Pi0_L
-            if side=='right' or side=='both':
-                Pi0_R_array[i] = Pi0_R
-        elif save_arrays== 'diag':
-            G0_R_array[i] = np.diagonal(G0_R,axis1=2,axis2=3)
-            G0_less_array[i] = np.diagonal(G0_less,axis1=2,axis2=3)
-            if side=='left' or side=='both':
-                Pi0_L_array[i] = np.diagonal(Pi0_L,axis1=2,axis2=3)
-            if side=='right' or side=='both':
-                Pi0_R_array[i] = np.diagonal(Pi0_R,axis1=2,axis2=3)
+    #if order == 0:
+     #   continue
 
-        if order == 0:
-            continue
-
-        #FIRST ORDER
-
+    #FIRST ORDER
+    if order > 0:
         #green function derivatives. Eqs (30), (29), (31)
         G0_R_dT = G0_R @ (H_dT+Sigma_R_dT)@G0_R
         G0_A_dT = np.conjugate(G0_R_dT)
@@ -217,36 +232,48 @@ def calc_current(T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,
         #First order current matrices
         if side=='left' or side=='both':
             Pi1_L = G1_less@Sigma_L_A + G1_R@Sigma_L_less - 1j/2 * G0_less_dT@Sigma_L_A_dw + 1j/2*G0_less_dw@Sigma_L_A_dT -1j/2*G0_R_dT@Sigma_L_less_dw + 1j/2*G0_R_dw@Sigma_L_less_dT
-            J1_L[i] = 1/np.pi * np.sum(np.trace(np.real(Pi1_L)*omega_weights,axis1=2,axis2=3),axis=1)
+            #J1_L[i] = 1/np.pi * np.sum(np.trace(np.real(Pi1_L)*omega_weights,axis1=2,axis2=3),axis=1)
+            J1_L = 1/np.pi * np.sum(np.trace(np.real(Pi1_L)*omega_weights,axis1=2,axis2=3),axis=1)
         #del(Pi1_L)
         if side=='right' or side=='both':
             Pi1_R = G1_less@Sigma_R_A + G1_R@Sigma_R_less - 1j/2 * G0_less_dT@Sigma_R_A_dw + 1j/2*G0_less_dw@Sigma_R_A_dT -1j/2*G0_R_dT@Sigma_R_less_dw + 1j/2*G0_R_dw@Sigma_R_less_dT
-            J1_R[i] = 1/np.pi * np.sum(np.trace(np.real(Pi1_R)*omega_weights,axis1=2,axis2=3),axis=1)
+            #J1_R[i] = 1/np.pi * np.sum(np.trace(np.real(Pi1_R)*omega_weights,axis1=2,axis2=3),axis=1)
+            J1_R = 1/np.pi * np.sum(np.trace(np.real(Pi1_R)*omega_weights,axis1=2,axis2=3),axis=1)
        
         if calc_density:
-            density1[i]=np.sum(omega_weights*np.imag(G1_less),axis=1)/(2*np.pi) 
+            #density1[i]=np.sum(omega_weights*np.imag(G1_less),axis=1)/(2*np.pi) 
+            density1=np.sum(omega_weights*np.imag(G1_less),axis=1)/(2*np.pi) 
             
         if save_arrays == 'all':
-            G1_R_array[i] = G1_R
-            G1_less_array[i] = G1_less
+            #G1_R_array[i] = G1_R
+            G1_R_array = G1_R
+            #G1_less_array[i] = G1_less
+            G1_less_array = G1_less
             if side=='left' or side=='both':
-                Pi1_L_array[i] = Pi1_L
+                #Pi1_L_array[i] = Pi1_L
+                Pi1_L_array = Pi1_L
             if side=='right' or side=='both':
-                Pi1_R_array[i] = Pi1_R
+                #Pi1_R_array[i] = Pi1_R
+                Pi1_R_array = Pi1_R
         elif save_arrays== 'diag':
-            G1_R_array[i] = np.diagonal(G1_R,axis1=2,axis2=3)
-            G1_less_array[i] = np.diagonal(G1_less,axis1=2,axis2=3)
+            #G1_R_array[i] = np.diagonal(G1_R,axis1=2,axis2=3)
+            G1_R_array = np.diagonal(G1_R,axis1=2,axis2=3)
+            #G1_less_array[i] = np.diagonal(G1_less,axis1=2,axis2=3)
+            G1_less_array = np.diagonal(G1_less,axis1=2,axis2=3)
             if side=='left' or side=='both':
-                Pi1_L_array[i] = np.diagonal(Pi1_L,axis1=2,axis2=3)
+                #Pi1_L_array[i] = np.diagonal(Pi1_L,axis1=2,axis2=3)
+                Pi1_L_array = np.diagonal(Pi1_L,axis1=2,axis2=3)
             if side=='right' or side=='both':
-                Pi1_R_array[i] = np.diagonal(Pi1_R,axis1=2,axis2=3)
+                #Pi1_R_array[i] = np.diagonal(Pi1_R,axis1=2,axis2=3)
+                Pi1_R_array = np.diagonal(Pi1_R,axis1=2,axis2=3)
 
 
 
-        if order==1: 
-            continue
+    #if order==1: 
+     #   continue
 
-        #SECOND ORDER
+    #SECOND ORDER
+    if order > 1:
         Sigma_L_less_d2w = calc_Sigma_less(t,omega,Electrode_L,derivative=2,nyquist_damping=nyquist_damping)
         Sigma_R_less_d2w = calc_Sigma_less(t,omega,Electrode_R,derivative=2,nyquist_damping=nyquist_damping)
         Sigma_L_R_d2w = calc_Sigma_R(t,omega,Electrode_L,derivative=2,nyquist_damping=nyquist_damping)
@@ -341,36 +368,47 @@ def calc_current(T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,
             - 1/8 * (G0_less_d2T @ Sigma_L_A_d2w + G0_less_d2w @ Sigma_L_A_d2T - 2*G0_less_dTdw @ Sigma_L_A_dTdw )\
             - 1/8 * (G0_R_d2T @ Sigma_L_less_d2w + G0_R_d2w @ Sigma_L_less_d2T - 2*G0_R_dTdw @ Sigma_L_less_dTdw )
             
-            J2_L[i] = 1/np.pi * np.sum(np.trace(np.real(Pi2_L)*omega_weights,axis1=2,axis2=3),axis=1)
+            #J2_L[i] = 1/np.pi * np.sum(np.trace(np.real(Pi2_L)*omega_weights,axis1=2,axis2=3),axis=1)
+            J2_L = 1/np.pi * np.sum(np.trace(np.real(Pi2_L)*omega_weights,axis1=2,axis2=3),axis=1)
         #del(Pi1_L)
         if side=='right' or side=='both':
             Pi2_R = G2_less@Sigma_R_A + G2_R@Sigma_R_less - 1j/2 * G1_less_dT@Sigma_R_A_dw + 1j/2*G1_less_dw@Sigma_R_A_dT -1j/2*G1_R_dT@Sigma_R_less_dw + 1j/2*G1_R_dw@Sigma_R_less_dT\
             - 1/8 * (G0_less_d2T @ Sigma_R_A_d2w + G0_less_d2w @ Sigma_R_A_d2T - 2*G0_less_dTdw @ Sigma_R_A_dTdw )\
             - 1/8 * (G0_R_d2T @ Sigma_R_less_d2w + G0_R_d2w @ Sigma_R_less_d2T - 2*G0_R_dTdw @ Sigma_R_less_dTdw )
             
-            J2_R[i] = 1/np.pi * np.sum(np.trace(np.real(Pi2_R)*omega_weights,axis1=2,axis2=3),axis=1)
+            #J2_R[i] = 1/np.pi * np.sum(np.trace(np.real(Pi2_R)*omega_weights,axis1=2,axis2=3),axis=1)
+            J2_R = 1/np.pi * np.sum(np.trace(np.real(Pi2_R)*omega_weights,axis1=2,axis2=3),axis=1)
 
         if calc_density:
-            density2[i]=np.sum(omega_weights*np.imag(G2_less),axis=1)/(2*np.pi) 
+            #density2[i]=np.sum(omega_weights*np.imag(G2_less),axis=1)/(2*np.pi) 
+            density2=np.sum(omega_weights*np.imag(G2_less),axis=1)/(2*np.pi) 
             
         if save_arrays == 'all':
-            G2_R_array[i] = G2_R
-            G2_less_array[i] = G2_less
+            #G2_R_array[i] = G2_R
+            G2_R_array = G2_R
+            #G2_less_array[i] = G2_less
+            G2_less_array = G2_less
             if side=='left' or side=='both':
-                Pi2_L_array[i] = Pi2_L
+                #Pi2_L_array[i] = Pi2_L
+                Pi2_L_array = Pi2_L
             if side=='right' or side=='both':
-                Pi2_R_array[i] = Pi2_R
+                #Pi2_R_array[i] = Pi2_R
+                Pi2_R_array = Pi2_R
         elif save_arrays== 'diag':
-            G2_R_array[i] = np.diagonal(G2_R,axis1=2,axis2=3)
-            G2_less_array[i] = np.diagonal(G2_less,axis1=2,axis2=3)
+            #G2_R_array[i] = np.diagonal(G2_R,axis1=2,axis2=3)
+            G2_R_array = np.diagonal(G2_R,axis1=2,axis2=3)
+            #G2_less_array[i] = np.diagonal(G2_less,axis1=2,axis2=3)
+            G2_less_array = np.diagonal(G2_less,axis1=2,axis2=3)
             if side=='left' or side=='both':
-                Pi2_L_array[i] = np.diagonal(Pi2_L,axis1=2,axis2=3)
+                #Pi2_L_array[i] = np.diagonal(Pi2_L,axis1=2,axis2=3)
+                Pi2_L_array = np.diagonal(Pi2_L,axis1=2,axis2=3)
             if side=='right' or side=='both':
-                Pi2_R_array[i] = np.diagonal(Pi2_R,axis1=2,axis2=3)
+                #Pi2_R_array[i] = np.diagonal(Pi2_R,axis1=2,axis2=3)
+                Pi2_R_array = np.diagonal(Pi2_R,axis1=2,axis2=3)
 
 
-        end_time = time.time()
-        #print('calc_current loop calculated in %.2f seconds'%(end_time-start_time))
+    end_time = time.time()
+    #print('calc_current loop calculated in %.2f seconds'%(end_time-start_time))
 
 
     if save_arrays == 'all' or save_arrays == 'diag':
@@ -743,6 +781,7 @@ def integrate_potential(T,tau,potential):
         res=0
         for i in range(N):
             res += f(t[i])*q[i]
+            #res f(t[i])*q[i]
         return res
     def antiderivative(t,t0=None): #integrates the function pot and gives the antiderivative evaluated as F(t) - F(t0)
         F=[]
@@ -774,6 +813,57 @@ def integrate_potential(T,tau,potential):
     end_time = time.time()
     print('integrate_potential calculated in %.2f seconds'%(end_time-start_time))
     return F
+
+
+def run_parallel(n_jobs,T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,side='left',order=2,eta=None,nyquist_damping=5,calc_density=False,save_arrays='none',name='AE'):
+    #syntax for calc_current: calc_current(T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,side='left',order=2,eta=None,nyquist_damping=5,calc_density=False,save_arrays='none',name='AE'):
+    start_time = time.time()
+    N_times_per_run = int(T.size / n_jobs)
+    remainder_times = T.size % n_jobs
+    T_list = []
+    idx = 0
+
+    #divide list of times into n_jobs separate lists
+    for i in range(n_jobs):
+        if i < remainder_times:
+            T_list.append(T[idx:idx + N_times_per_run + 1])
+            idx +=N_times_per_run + 1
+        else:
+            T_list.append(T[idx:idx + N_times_per_run])
+            idx +=N_times_per_run
+
+
+    #perform parallel computation
+    global _global_func_randomid_FAWDAUYGWHIUANP
+    def _global_func_randomid_FAWDAUYGWHIUANP(T):
+        res = calc_current(T,Device,Electrode_L,Electrode_R,omega,omega_weights,side,order,eta,nyquist_damping,calc_density,save_arrays,name)
+        return res
+    res = jl.Parallel(n_jobs=n_jobs,backend='multiprocessing')(jl.delayed(_global_func_randomid_FAWDAUYGWHIUANP)(Ti) for Ti in T_list)
+    del _global_func_randomid_FAWDAUYGWHIUANP
+
+    #merge results into single dict
+    out = {}
+    res0 = res[0]
+    for key in res0.keys():
+        val = res0[key]
+        for dd in res[1:]:
+            val = np.concatenate((val,dd[key])) 
+        out[key] = val
+
+    return out
+
+
+
+
+
+    # calc_current(T,Device,Electrode_L,Electrode_R,omega=omega,omega_weights=omega_weights,side=side,order=order,eta=eta,nyquist_damping=nyquist_damping,calc_density=calc_density,save_arrays=save_arrays,name=name):
+
+
+
+
+
+
+
 
 
 
