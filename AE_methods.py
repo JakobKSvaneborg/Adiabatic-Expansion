@@ -720,30 +720,63 @@ def calc_Sigma_less(T,omega,Electrode,derivative=0,extension_length=300,nyquist_
         Gam = Gamma(w_fft_var.reshape(1,-1,1,1)+w_extended.min())
         fermi = Electrode.fermi(w_fft_var+w_extended.min())
     coupling_index = np.ones((Electrode.basis_size,Electrode.basis_size))
-    for i in range(Electrode.basis_size):
-        for j in range(Electrode.basis_size):
-            if coupling_index[i,j]: #each iteration calculates one matrix element of Sigma. Variables in the loop do not carry matrix indices.
-                if Electrode.use_aux_modes: #potential must be of the meromorphic class
-                    #Lorentz_int_residues = lambda E : exp(-1j*(E)*tau)#f(E)*exp(-1j*(E)*taup)#
-                    #Lor_poles, Lor_res = Lorentz_params
-                    #Lorentz_params_ij = [Lor_poles,Lor_res[:,i,j]]
-                    #Lorentz_int = self.int_residues2(Lorentz_int_residues,Lorentz_params_ij,halfplane='lower')
-                    #forward_trans = Lorentz_int/(2*np.pi)
-                    exponential = lambda E : exp(-1j*E*tau)
-                    forward_trans = potential.integrate(f=exponential)
-                else:
-                    #forward transform (energy integral)
-                    fxm = domain_length/(2*np.pi*N)*Gam[:,:,i,j]*fermi        
-                    forward_trans = AE_math.fft(fxm,axis=1) * exp(-1j*w_extended.min()*tau)
-                    
-                forward_trans = forward_trans * Nyquist_filter
-                if derivative > 0:
-                    forward_trans *= (1j*tau)**derivative
-                forward_trans = forward_trans * expint
-                forward_trans[:,0] /= 2
-                back_trans = tau.max() * AE_math.ifft(exp(1j*w_extended.min()*tau)*forward_trans,axis=1)
+    #coupling_index = None
+    if coupling_index is None: #no coupling index; calculate entire matrices at once for faster execution (at the cost of more memory)
+        if Electrode.use_aux_modes:
+            print('error: aux modes not implemented!')
+            assert 1==0
+        else:
+            fermi_shape = list(fermi.shape)
+            fermi_shape.append(1)
+            fermi_shape.append(1)
+            fermi = fermi.reshape(fermi_shape)
 
-                Sigma_less[:,:,i,j] =   2j*np.real(back_trans[:,omega_index])
+            #forward transform (energy integral)
+            fxm = domain_length/(2*np.pi*N)*Gam*fermi        
+            forward_trans = AE_math.fft(fxm,axis=1) * exp(-1j*w_extended.min()*tau.reshape(1,-1,1,1))
+            
+        forward_trans = forward_trans * Nyquist_filter.reshape(1,-1,1,1)
+        if derivative > 0:
+            forward_trans *= (1j*tau.reshape(1,-1,1,1))**derivative
+        expint_shape = list(expint.shape)
+        expint_shape.append(1)
+        expint_shape.append(1)
+        expint = expint.reshape(expint_shape)
+
+        forward_trans = forward_trans * expint
+        forward_trans[:,0] /= 2
+        back_trans = tau.max() * AE_math.ifft(exp(1j*w_extended.min()*tau.reshape(1,-1,1,1))*forward_trans,axis=1)
+
+        Sigma_less = 2j*np.real(back_trans[:,omega_index])
+
+
+
+
+    elif coupling_index is not None:
+        for i in range(Electrode.basis_size):
+            for j in range(Electrode.basis_size):
+                if coupling_index[i,j]: #each iteration calculates one matrix element of Sigma. Variables in the loop do not carry matrix indices.
+                    if Electrode.use_aux_modes: #potential must be of the meromorphic class
+                        #Lorentz_int_residues = lambda E : exp(-1j*(E)*tau)#f(E)*exp(-1j*(E)*taup)#
+                        #Lor_poles, Lor_res = Lorentz_params
+                        #Lorentz_params_ij = [Lor_poles,Lor_res[:,i,j]]
+                        #Lorentz_int = self.int_residues2(Lorentz_int_residues,Lorentz_params_ij,halfplane='lower')
+                        #forward_trans = Lorentz_int/(2*np.pi)
+                        exponential = lambda E : exp(-1j*E*tau)
+                        forward_trans = potential.integrate(f=exponential)
+                    else:
+                        #forward transform (energy integral)
+                        fxm = domain_length/(2*np.pi*N)*Gam[:,:,i,j]*fermi        
+                        forward_trans = AE_math.fft(fxm,axis=1) * exp(-1j*w_extended.min()*tau)
+                        
+                    forward_trans = forward_trans * Nyquist_filter
+                    if derivative > 0:
+                        forward_trans *= (1j*tau)**derivative
+                    forward_trans = forward_trans * expint
+                    forward_trans[:,0] /= 2
+                    back_trans = tau.max() * AE_math.ifft(exp(1j*w_extended.min()*tau)*forward_trans,axis=1)
+
+                    Sigma_less[:,:,i,j] =   2j*np.real(back_trans[:,omega_index])
 
     end_time = time.time()
     #print('calc_Sigma_less calculated in %.2f seconds'%(end_time-start_time))
