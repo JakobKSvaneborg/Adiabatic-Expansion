@@ -18,7 +18,54 @@ import os, psutil
 import AE_math
 
 class Potential:
-    #class for handling external potentials
+    """
+    Class for handling external potentials.
+
+    The raison d'etre is the fact that in calculating the Wigner transforms of electrode self-energies,
+    an integral over the entire external potential must be carried out.
+    To ensure that this is done correctly, the program needs to know the support of the potential, and 
+    this is a parameter that may be specified in this class. 
+    By optionally specifiying additional parameters such as the Range of the potential or 
+    analytical expressions for its derivative or antiderivative, computation time may be improved significantly.
+
+    Example use:
+        pot = Potential(np.cos, support=[0, 2*np.pi],Range=[-1,1],antiderivative = np.sin)
+        t = np.linspace(-np.pi, np.pi,100)
+        V = pot(t)
+
+        V will now be an array with the same shape as t. For those values of t that are inside the support [0,2 pi],
+        V will contain the function value np.cos(t). For those values of t that are outside the support of the
+        potential (i.e. the first 50-ish entries), V will contain the value zero.
+
+    If the antiderivative is not specified in the initialization, the function pot.get_numerical_antiderivative()
+    should be called before using the object in calculations. This makes the calculation of Wigner transforms much
+    faster. It also ensures that the antiderivative holds information about the support of the potential, which may
+    be cumbersome to include in a manually specified closed-form antiderivative.
+    
+
+    ----------------- Mandatory parameters ----------------- 
+
+    - function: the potential as a function of time. Must be a scalar or a (callable) function.
+                If a scalar, the potential is taken to be constantly equal to this value inside the support.
+                If a function, the potential is taken to be equal to the function values inside the interval
+                specified by the support argument, and zero outside this interval.
+    
+    ----------------- Optional parameters ----------------- 
+
+    - support: support of the function, list of two values. Defaults to [-np.inf, np.inf]
+    
+    
+    - Range: Range of the function. Specifying this parameter helps to determine more accurately the number of
+    Fourier components required to accurately calculate the Wigner transform of self-energies.
+
+    - derivative: specify the derivative of the potential. This is in fact not used in the electrodes.
+
+    - antiderivative: specify the antiderivative of the potential.
+
+
+
+
+    """
 
     def __init__(self,function,support=[0,0],Range=[None, None],derivative = None,antiderivative = None):
         #support of [0,0] signifies a range of - infty to infty
@@ -197,13 +244,20 @@ class Electrode:
     #WBL_bool
     #basis_size
 
-    def __init__(self,Gamma=None,kT=0.1,mu=0,potential = Potential(lambda t : 0),use_aux_modes=False,eta=0,coupling_index=None):
+    GammaAsArray = None
+    GammaFermiAsArray = None
+    dw = None
+
+    def __init__(self,Gamma=None,kT=0.1,mu=0,potential = Potential(0),bandwidth=None,use_aux_modes=False,eta=0,coupling_index=None):
+        
         self.kT = kT
         self.mu = mu
         self.potential = potential
         self.use_aux_modes = use_aux_modes
+        self.bandwidth = bandwidth
         self.set_Gamma(Gamma)
         self.eta = eta
+        
         if coupling_index is None:
             coupling_index_matrix = np.ones((self.basis_size,self.basis_size)) #if not specified, assume that every index couples
         else: 
@@ -212,12 +266,12 @@ class Electrode:
                 #coupling_index_matrix[]
                 pass
 
-
-    def fermi(self,eps,T=None):
-        if T is not None:
-            exp = np.exp(-(eps-self.mu - self.potential(T))/self.kT)
+    def fermi(self,eps,T=0):
+        if callable(self.mu):
+            mu = self.mu(T)
         else:
-            exp = np.exp(-(eps-self.mu)/self.kT)
+            mu = self.mu
+        exp = AE_math.exp(-(eps-mu)/self.kT)
         return exp/(1+exp)
 
     def set_Gamma(self,Gamma):
@@ -226,8 +280,13 @@ class Electrode:
             return  
         elif callable(Gamma):
             self.WBL_bool = False
+            if self.bandwidth is None:
+                print('Warning: bandwidth (support) of self-energy should be specified for best performance')
+                print('Defaulting to setting: bandwidth = [-10,10].')
+                self.bandwidth = [-10,10]
         else:
             self.WBL_bool = True
+            self.bandwidth = [-10,10]
             Gamma_mat = Gamma
             Gamma = lambda x : np.ones(np.array(x).shape)*Gamma_mat #make gamma a callable function so that syntax is the same in all cases
         self.Gamma = Gamma
@@ -236,6 +295,39 @@ class Electrode:
         test_W = np.array([[[0]]])
         self.basis_size = Gamma(test_W).shape[-1] #calls Gamma and returns size of array along last dimension - this should correspond to the device dimension.
         return
+
+    def getGammaAsArray(self,dw=None): #calculate imag. part of self-energy across entire bandwidth with resolution dw
+        if self.WBL_bool:
+            return self.Gamma(0)
+        elif dw == self.dw and self.GammaAsArray is not None:
+            return self.GammaAsArray
+        else:
+            print('running new GammaAsArray calculation')
+            a,b = self.bandwidth
+            w = np.arange(a,b+dw,dw).reshape(1,-1,1,1)
+            self.GammaAsArray = self.Gamma(w)
+            self.dw = dw
+            return self.GammaAsArray
+
+    def getGammaFermiAsArray(self,dw=None,T=0): #calculate imag. part of self-energy across entire bandwidth with resolution dw
+        #if dw == self.dw and self.GammaFermiAsArray is not None:
+        #return self.GammaFermiAsArray
+        #else:
+        #print('running new GammaFermiAsArray calculation')
+        a,b = self.bandwidth
+        w = np.arange(a,b+dw,dw).reshape(1,-1,1,1)
+        #self.GammaFermiAsArray = self.Gamma(w)*self.fermi(w,T)
+        #self.dw = dw
+        #return self.GammaFermiAsArray
+        return self.Gamma(w)*self.fermi(w,T)
+
+
+
+
+
+
+
+
 
 
 class Device:
@@ -372,36 +464,36 @@ class Meromorphic:
 
 
 
+"""
 
 
+poles = np.array([1j,-1j])
+residues = np.array([1])*np.array([1j,-1j]).reshape(-1,1,1)
+print(residues.shape)
+f = Meromorphic(poles,residues,real=True)
+g = Meromorphic(poles+1,residues,real=True)
+x = np.linspace(-3,3,100)
+print(f.integrate(half_plane='lower'))
+print('f.dim = ', f.dim)
+fx = f(x)
+fx = fx.real
+print('fx shape = ', fx.shape)
+import matplotlib.pyplot as plt
+plt.plot(x,fx[:,0,0])
+plt.plot(x,g(x)[:,0,0])
 
-#poles = np.array([1j,-1j])
-#residues = np.array([1])*np.array([1j,-1j]).reshape(-1,1,1)
-#print(residues.shape)
-#f = Meromorphic(poles,residues,real=True)
-#g = Meromorphic(poles+1,residues,real=True)
-#x = np.linspace(-3,3,100)
-#print(f.int(half_plane='lower'))
-#print('f.dim = ', f.dim)
-#x = f(x)
-#print('fx shape = ', fx.shape)
-#fx = fx.real
-#import matplotlib.pyplot as plt
-#plt.plot(x,fx[:,1,1])
-#plt.show()
-    #def __mul__(self,f):
-#print(g.poles)
-#h = f*g
-#print(h.poles)
-#print(h(x).shape)
-#print(h.residues)
-#print(f.residues[0]@g(f.poles[0]))
-#plt.plot(h(x)[:,0,0])
-#plt.plot((f(x)@g(x))[:,0,0],ls='dashed')
-#plt.close()
-#plt.show()
-
-
+#def __mul__(self,f):
+print(g.poles)
+h = f*g
+plt.plot(x,h(x)[:,0,0])
+plt.show()
+print(h.poles)
+print(h(x).shape)
+print(h.residues)
+print(f.residues[0]@g(f.poles[0]))
+print(h.integrate())
+print(h.real)
+"""
 """
 def calc_Sigma_less(self,T,omega,derivative=0,extension_length=300,nyquist_damping=5,use_aux_modes=None): #new one with aux modes
         #derivative calculates the derivative of the specified order w.r.t omega
