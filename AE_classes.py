@@ -244,11 +244,11 @@ class Electrode:
     #WBL_bool
     #basis_size
 
-    GammaAsArray = None
-    GammaFermiAsArray = None
-    dw = None
 
-    def __init__(self,Gamma=None,kT=0.1,mu=0,potential = Potential(0),bandwidth=None,use_aux_modes=False,eta=0,coupling_index=None):
+
+
+
+    def __init__(self,Gamma=None,kT=0.1,mu=0,potential = Potential(0),bandwidth=None,max_dw=0.01,use_aux_modes=False,eta=0,coupling_index=None):
         
         self.kT = kT
         self.mu = mu
@@ -257,7 +257,7 @@ class Electrode:
         self.bandwidth = bandwidth
         self.set_Gamma(Gamma)
         self.eta = eta
-        
+        self.max_dw = max_dw
         if coupling_index is None:
             coupling_index_matrix = np.ones((self.basis_size,self.basis_size)) #if not specified, assume that every index couples
         else: 
@@ -282,11 +282,11 @@ class Electrode:
             self.WBL_bool = False
             if self.bandwidth is None:
                 print('Warning: bandwidth (support) of self-energy should be specified for best performance')
-                print('Defaulting to setting: bandwidth = [-10,10].')
-                self.bandwidth = [-10,10]
+                print('Defaulting to setting: bandwidth = [-5,5].')
+                self.bandwidth = [-5,5]
         else:
             self.WBL_bool = True
-            self.bandwidth = [-10,10]
+            self.bandwidth=[-np.inf,np.inf]
             Gamma_mat = Gamma
             Gamma = lambda x : np.ones(np.array(x).shape)*Gamma_mat #make gamma a callable function so that syntax is the same in all cases
         self.Gamma = Gamma
@@ -295,32 +295,6 @@ class Electrode:
         test_W = np.array([[[0]]])
         self.basis_size = Gamma(test_W).shape[-1] #calls Gamma and returns size of array along last dimension - this should correspond to the device dimension.
         return
-
-    def getGammaAsArray(self,dw=None): #calculate imag. part of self-energy across entire bandwidth with resolution dw
-        if self.WBL_bool:
-            return self.Gamma(0)
-        elif dw == self.dw and self.GammaAsArray is not None:
-            return self.GammaAsArray
-        else:
-            print('running new GammaAsArray calculation')
-            a,b = self.bandwidth
-            w = np.arange(a,b+dw,dw).reshape(1,-1,1,1)
-            self.GammaAsArray = self.Gamma(w)
-            self.dw = dw
-            return self.GammaAsArray
-
-    def getGammaFermiAsArray(self,dw=None,T=0): #calculate imag. part of self-energy across entire bandwidth with resolution dw
-        #if dw == self.dw and self.GammaFermiAsArray is not None:
-        #return self.GammaFermiAsArray
-        #else:
-        #print('running new GammaFermiAsArray calculation')
-        a,b = self.bandwidth
-        w = np.arange(a,b+dw,dw).reshape(1,-1,1,1)
-        #self.GammaFermiAsArray = self.Gamma(w)*self.fermi(w,T)
-        #self.dw = dw
-        #return self.GammaFermiAsArray
-        return self.Gamma(w)*self.fermi(w,T)
-
 
 
 
