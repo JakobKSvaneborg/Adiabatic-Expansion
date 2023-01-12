@@ -24,30 +24,80 @@ import joblib as jl
 
 
 #@njit(parallel=True)
-def calc_current(T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,side='left',order=2,eta=None,nyquist_damping=5,calc_density=False,save_arrays='none',name='AE'):
-    #save_arrays specifies whether to save the internal arrays. Currently just set to save the Green's functions and current matrices. 
-    #save_arrays may be set to 'all', 'diag' or 'none' depending on whether you want to save the entire arrays, their diagonals, or not at all
-    #name: name prepended to saved files
+def calc_current(T,Device,Electrode_L,Electrode_R,order=2,eta=None,omega=None,nyquist_damping=5,calc_density=False,side='both',save_arrays='none',name=None):
+    """
+    This function is the main workhorse of the code; using the adiabatic expansion technique, it calculates Greens functions and currents to a desired order (max 2) in the central time derivative.
+    It uses the functions calc_Sigma_R and calc_Sigma_less to calculate the Wigner transforms of the specified self-energies for each electrode.
+
+    The mandatory parameters are
+
+    - T (scalar or np.array): list of times for which the calculation should be carried out
+
+    - Device (instance of AE_classes.Device): An object specifying the device, which should include the time-dependent device Hamiltonian. See AE_classes.Device
+
+    - Electrode_L (instance of AE_classes.Electrode): An object specifying the left electrode, see AE_classes.Electrode
+
+    - Electrode_R (instance of AE_classes.Electrode): An object specifying the right electrode, see AE_classes.Electrode
+
+    ------------------ optional parameters ------------------ 
+
+    - order: The max order to which the calculation is carried out. Must be 0, 1, or 2.
+
+    - eta: The imaginary eta used to smoothen out functions. If not specified, defaults to the maximum eta used in the electrodes. Must be non-negative.
+
+    - omega (np.array): frequency points at which the parameters should be calculated. Must be uniformly spaced. Finer sampling leads to more accurate results, and the range should cover all energies where dynamics may occur. 
+
+    - nyquist_damping: Width of filter used to smoothen the wigner-transformed self-energies. Removes rapid oscillations near discontinuities of fourier-transformed variables. Has similar effect as an imaginary eta. Larger values -> more filtering. 
+
+    - calc_density (boolean): specifies whether to calculate and return the density of electrons in the device as a function of time. This is calculated from the lesser GF.
+
+    - side: specify whether to calculate the current into the device from both electrodes, or only one of them. Must be either 'left', 'right', or 'both'.
+
+    - save_arrays: specifies whether to save the Green's functions and energy-resolved current matrices used in the internal calculations. Must be either 'none', in which case nothing is saved;
+                    'diag' in which case the diagonal of the arrays are saved (i.e. corresponding to on-site elements of the Device hamiltonian)';
+                    or 'all', in which case the entire arrays are saved.
+
+    - name: if specified, saves arrays to files with the given name as a prefix
+
+    ------------------ returns ------------------ 
+
+    - out: a dict containing the specified output variables.
+
+
+    """    
     out = {} #dict holding the output variables
     initial_start_time = time.time()
     deriv = AE_math.FD
     T=np.array(T).reshape(-1,1,1,1)
-    omega = np.array(omega).reshape(1,-1,1,1)
 
     if eta is None:
         eta = max(Electrode_L.eta,Electrode_R.eta)
 
     if omega is None:     
-        print('error in calc_current: omega was None. For now omega must be specified')
-        assert 1==0
+        dw = min(Electrode_L.max_dw,Electrode_R.max_dw)
+        if not Electrode_L.WBL_bool:
+            a_L, b_L = Electrode_L.bandwidth
+        else:
+            a_L,b_L = (-5, 5)
+            #print(r'warning: omega was not specified and left electrode is in the wide-band limit. Defaulting to range $\omega \in \ [-5,5]$. ')
+        if not Electrode_R.WBL_bool:
+            a_R, b_R = Electrode_R.bandwidth
+        else:
+            a_R,b_R = (-5, 5)
+            #print(r'warning: omega was not specified and right electrode is in the wide-band limit. Defaulting to range $\omega \in \ [-5,5]$. ')
+        a_min = min(a_R,a_L)
+        b_max = max(b_L, b_R)
+        omega = np.arange(a_min,b_max+dw,dw)
+        if Electrode_L.WBL_bool and Electrode_R.WBL_bool:
+            print(r'warning: both electrodes are in the wide-band limit, and omega was not specified. Defaulting to range $\omega \in [-5,5]$.')
 
-    else:
-        w=omega.flatten()
-        omega_weights = (w[1:] - w[:-1]) #calculate dw
-        omega_weights[0] = omega_weights[0]/2 #trapez: divide first weight by 2
-        omega_weights = list(omega_weights)
-        omega_weights.append(omega_weights[-1]/2)
-        omega_weights = np.array(omega_weights).reshape(np.shape(omega))
+    omega = np.array(omega).reshape(1,-1,1,1)
+    w=omega.flatten()
+    omega_weights = (w[1:] - w[:-1]) #calculate dw
+    omega_weights[0] = omega_weights[0]/2 #trapez: divide first weight by 2
+    omega_weights = list(omega_weights)
+    omega_weights.append(omega_weights[-1]/2)
+    omega_weights = np.array(omega_weights).reshape(np.shape(omega))
     f_Sigma_L_R = lambda t : calc_Sigma_R(t,omega,Electrode_L,nyquist_damping=nyquist_damping)
     f_Sigma_R_R = lambda t : calc_Sigma_R(t,omega,Electrode_R,nyquist_damping=nyquist_damping)
     f_Sigma_L_less = lambda t : calc_Sigma_less(t,omega,Electrode_L,nyquist_damping=nyquist_damping)
@@ -487,8 +537,9 @@ def calc_Sigma_R(T,omega,Electrode,derivative=0,extension_length=300,nyquist_dam
 
     if potential.potential_is_constant_everywhere:
             if derivative == 0:
-                Sigma0 = -1j/2*AE_math.hilbert(Gamma(omega-potential.function),axis=1)
-                return Sigma0
+                Delta0 = -1/2 * Gamma(omega-potential.function)
+                Lambda0 = -AE_math.hilbert(Delta0 - Delta0[:,0],axis=1).imag
+                return Lambda0 + 1j*Delta0
             else:
                 Sigma0 = lambda w : Gamma(w-potential.function)
                 Sigma0_dw = AE_math.FD(Sigma0,omega,n=derivative)   
@@ -627,10 +678,10 @@ def calc_Sigma_less(T,omega,Electrode,derivative=0,extension_length=300,nyquist_
     omega = np.array(omega).reshape(1,-1,1,1)
     if potential.potential_is_constant_everywhere:
         if derivative == 0:
-            Sigma0 = 1j*Gamma(omega-potential.function)*Electrode.fermi(omega - potential.function)
+            Sigma0 = 1j*Gamma(omega-potential.function)*Electrode.fermi(omega - potential.function,T)
             return Sigma0
         else:
-            Sigma0 = lambda w : 1j*Gamma(w-potential.function)*Electrode.fermi(w - potential.function)
+            Sigma0 = lambda w : 1j*Gamma(w-potential.function)*Electrode.fermi(w - potential.function,T)
             """
             N = omega.size
             domain_length = omega.max() - omega.min()
@@ -677,7 +728,7 @@ def calc_Sigma_less(T,omega,Electrode,derivative=0,extension_length=300,nyquist_
 
 
     if V_max == V_min: #potential is constant everywhere
-        Sigma = Gamma(omega - T*V_max)*Electrode.fermi(omega - T*V_max)
+        Sigma = Gamma(omega - T*V_max)*Electrode.fermi(omega - T*V_max,T)
         print('Potential constant - are you sure you want a time-dependent calculation?')
         return 1j*Sigma
 
@@ -718,7 +769,7 @@ def calc_Sigma_less(T,omega,Electrode,derivative=0,extension_length=300,nyquist_
     omega_index = slice(extension_length,(np.size(omega)+extension_length))
     if not Electrode.use_aux_modes:
         Gam = Gamma(w_fft_var.reshape(1,-1,1,1)+w_extended.min())
-        fermi = Electrode.fermi(w_fft_var+w_extended.min())
+        fermi = Electrode.fermi(w_fft_var.reshape(1,-1,1,1)+w_extended.min(),T)
     coupling_index = np.ones((Electrode.basis_size,Electrode.basis_size))
     #coupling_index = None
     if coupling_index is None: #no coupling index; calculate entire matrices at once for faster execution (at the cost of more memory)
@@ -726,10 +777,11 @@ def calc_Sigma_less(T,omega,Electrode,derivative=0,extension_length=300,nyquist_
             print('error: aux modes not implemented!')
             assert 1==0
         else:
-            fermi_shape = list(fermi.shape)
-            fermi_shape.append(1)
-            fermi_shape.append(1)
-            fermi = fermi.reshape(fermi_shape)
+            #fermi_shape = list(fermi.shape)
+            #if len(fermi_shape) < 4:
+                #fermi_shape.append(1)
+                #fermi_shape.append(1)
+                #fermi = fermi.reshape(fermi_shape)
 
             #forward transform (energy integral)
             fxm = domain_length/(2*np.pi*N)*Gam*fermi        
@@ -766,7 +818,7 @@ def calc_Sigma_less(T,omega,Electrode,derivative=0,extension_length=300,nyquist_
                         forward_trans = potential.integrate(f=exponential)
                     else:
                         #forward transform (energy integral)
-                        fxm = domain_length/(2*np.pi*N)*Gam[:,:,i,j]*fermi        
+                        fxm = domain_length/(2*np.pi*N)*Gam[:,:,i,j]*fermi[:,:,0,0]        
                         forward_trans = AE_math.fft(fxm,axis=1) * exp(-1j*w_extended.min()*tau)
                         
                     forward_trans = forward_trans * Nyquist_filter
@@ -848,8 +900,8 @@ def integrate_potential(T,tau,potential):
     return F
 
 
-def run_parallel(n_jobs,T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,side='left',order=2,eta=None,nyquist_damping=5,calc_density=False,save_arrays='none',name='AE'):
-    #syntax for calc_current: calc_current(T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,side='left',order=2,eta=None,nyquist_damping=5,calc_density=False,save_arrays='none',name='AE'):
+def run_parallel(n_jobs,T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,side='left',order=2,eta=None,nyquist_damping=5,calc_density=False,save_arrays='none',name=''):
+    #syntax for calc_current: (T,Device,Electrode_L,Electrode_R,order=2,eta=None,omega=None,nyquist_damping=5,calc_density=False,side='both',save_arrays='none',name=None):
     start_time = time.time()
     N_times_per_run = int(T.size / n_jobs)
     remainder_times = T.size % n_jobs
@@ -869,7 +921,7 @@ def run_parallel(n_jobs,T,Device,Electrode_L,Electrode_R,omega=None,omega_weight
     #perform parallel computation
     global _global_func_randomid_FAWDAUYGWHIUANP
     def _global_func_randomid_FAWDAUYGWHIUANP(T):
-        res = calc_current(T,Device,Electrode_L,Electrode_R,omega,omega_weights,side,order,eta,nyquist_damping,calc_density,save_arrays,name)
+        res = calc_current(T,Device,Electrode_L,Electrode_R,order,eta,omega,nyquist_damping,calc_density,side,save_arrays,name)
         return res
     res = jl.Parallel(n_jobs=n_jobs,backend='multiprocessing')(jl.delayed(_global_func_randomid_FAWDAUYGWHIUANP)(Ti) for Ti in T_list)
     del _global_func_randomid_FAWDAUYGWHIUANP

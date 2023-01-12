@@ -96,7 +96,7 @@ def hilbert(f,axis=-1,padding_length=-1): #computes the hilbert transform of f a
     shape = list(f.shape)
     f = f.real
     if padding_length == -1:
-        padding_length = int(shape[axis]) #pads f with the same number of zeros as its length
+        padding_length = 2*int(shape[axis]) #pads f with the same number of zeros as its length
         #print(padding_length)
     padding_indices = []
     for i in range(len(shape)):
