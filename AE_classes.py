@@ -259,13 +259,9 @@ class Electrode:
         self.eta = eta
         self.max_dw = max_dw
         if coupling_index is None:
-            coupling_index_matrix = np.ones((self.basis_size,self.basis_size)) #if not specified, assume that every index couples
-        else: 
-            coupling_index_matrix = np.zeros((self.basis_size,self.basis_size))
-            for idx in coupling_index:
-                #coupling_index_matrix[]
-                pass
-
+            coupling_index = np.ones((self.basis_size,self.basis_size)) #if not specified, assume that every index couples
+        self.coupling_index = coupling_index
+        #coupling index: a matrix of the same shape as Gamma containing either zeros or ones. a zero at some index indicates that the corresponding index in Gamma is always zero.
     def fermi(self,eps,T=0):
         if callable(self.mu):
             mu = self.mu(T)

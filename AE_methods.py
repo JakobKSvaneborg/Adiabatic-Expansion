@@ -638,7 +638,7 @@ def calc_Sigma_R(T,omega,Electrode,derivative=0,extension_length=300,nyquist_dam
     omega_index = slice(extension_length,(np.size(omega)+extension_length))
     if not Electrode.use_aux_modes:
         Gam = Gamma(w_fft_var.reshape(1,-1,1,1)+w_extended.min())
-    coupling_index = np.ones((Electrode.basis_size,Electrode.basis_size))
+    coupling_index = Electrode.coupling_index
     for i in range(Electrode.basis_size):
         for j in range(Electrode.basis_size):
             if coupling_index[i,j]: #each iteration calculates one matrix element of Sigma. Variables in the loop do not carry matrix indices.
@@ -770,8 +770,7 @@ def calc_Sigma_less(T,omega,Electrode,derivative=0,extension_length=300,nyquist_
     if not Electrode.use_aux_modes:
         Gam = Gamma(w_fft_var.reshape(1,-1,1,1)+w_extended.min())
         fermi = Electrode.fermi(w_fft_var.reshape(1,-1,1,1)+w_extended.min(),T)
-    coupling_index = np.ones((Electrode.basis_size,Electrode.basis_size))
-    #coupling_index = None
+    coupling_index = Electrode.coupling_index
     if coupling_index is None: #no coupling index; calculate entire matrices at once for faster execution (at the cost of more memory)
         if Electrode.use_aux_modes:
             print('error: aux modes not implemented!')
@@ -790,10 +789,11 @@ def calc_Sigma_less(T,omega,Electrode,derivative=0,extension_length=300,nyquist_
         forward_trans = forward_trans * Nyquist_filter.reshape(1,-1,1,1)
         if derivative > 0:
             forward_trans *= (1j*tau.reshape(1,-1,1,1))**derivative
-        expint_shape = list(expint.shape)
-        expint_shape.append(1)
-        expint_shape.append(1)
-        expint = expint.reshape(expint_shape)
+        #expint_shape = list(expint.shape)
+        #expint_shape.append(1)
+        #expint_shape.append(1)
+        #expint = expint.reshape(expint_shape)
+        expint = expint.reshape(T.size,tau.size,1,1)
 
         forward_trans = forward_trans * expint
         forward_trans[:,0] /= 2
