@@ -24,7 +24,7 @@ import joblib as jl
 
 
 #@njit(parallel=True)
-def calc_current(T,Device,Electrode_L,Electrode_R,order=2,eta=None,omega=None,nyquist_damping=5,calc_density=False,side='both',save_arrays='none',name=None):
+def calc_current(T,Device,Electrode_L,Electrode_R,order=2,eta=None,omega=None,nyquist_damping=5,calc_density=False,side='both',save_arrays='none',name=None,verbose=True):
     """
     This function is the main workhorse of the code; using the adiabatic expansion technique, it calculates Greens functions and currents to a desired order (max 2) in the central time derivative.
     It uses the functions calc_Sigma_R and calc_Sigma_less to calculate the Wigner transforms of the specified self-energies for each electrode.
@@ -484,7 +484,8 @@ def calc_current(T,Device,Electrode_L,Electrode_R,order=2,eta=None,omega=None,ny
                 out['Pi2_R'] = Pi2_R_array
 
     end_time = time.time()
-    print('calc_current total calculated in %.2f seconds'%(end_time-initial_start_time))
+    if verbose:
+        print('calc_current total calculated in %.2f seconds'%(end_time-initial_start_time))
 
     if side =='left': 
         out['J0_L'] = J0_L
@@ -900,7 +901,7 @@ def integrate_potential(T,tau,potential):
     return F
 
 
-def run_parallel(n_jobs,T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,side='left',order=2,eta=None,nyquist_damping=5,calc_density=False,save_arrays='none',name=''):
+def run_parallel(n_jobs,T,Device,Electrode_L,Electrode_R,omega=None,omega_weights=None,side='left',order=2,eta=None,nyquist_damping=5,calc_density=False,save_arrays='none',name='',verbose=False):
     #syntax for calc_current: (T,Device,Electrode_L,Electrode_R,order=2,eta=None,omega=None,nyquist_damping=5,calc_density=False,side='both',save_arrays='none',name=None):
     start_time = time.time()
     N_times_per_run = int(T.size / n_jobs)
@@ -921,7 +922,7 @@ def run_parallel(n_jobs,T,Device,Electrode_L,Electrode_R,omega=None,omega_weight
     #perform parallel computation
     global _global_func_randomid_FAWDAUYGWHIUANP
     def _global_func_randomid_FAWDAUYGWHIUANP(T):
-        res = calc_current(T,Device,Electrode_L,Electrode_R,order,eta,omega,nyquist_damping,calc_density,side,save_arrays,name)
+        res = calc_current(T,Device,Electrode_L,Electrode_R,order,eta,omega,nyquist_damping,calc_density,side,save_arrays,name,verbose)
         return res
     res = jl.Parallel(n_jobs=n_jobs,backend='multiprocessing')(jl.delayed(_global_func_randomid_FAWDAUYGWHIUANP)(Ti) for Ti in T_list)
     del _global_func_randomid_FAWDAUYGWHIUANP
